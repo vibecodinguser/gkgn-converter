@@ -110,6 +110,17 @@ def transform_dataframe(df):
 
     df.columns = FINAL_COLUMNS
 
+    # 10. В столбцах Широта/Долгота удаляем все символы справа от апострофа
+    def trim_after_apostrophe(value):
+        if isinstance(value, str) and "'" in value:
+            left = value.split("'", 1)[0]
+            return f"{left}'"
+        return value
+
+    for coord_col in ("Широта", "Долгота"):
+        if coord_col in df.columns:
+            df[coord_col] = df[coord_col].map(trim_after_apostrophe)
+
     return df
 
 def export_table_without_header(table, doc):
