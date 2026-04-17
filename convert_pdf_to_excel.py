@@ -3,6 +3,7 @@ import pandas as pd
 from pathlib import Path
 import sys
 import inspect
+import re
 
 # Настройки трансформации данных
 RENAME_MAP = {
@@ -110,16 +111,69 @@ def transform_dataframe(df):
 
     df.columns = FINAL_COLUMNS
 
-    # 10. В столбцах Широта/Долгота удаляем все символы справа от апострофа
-    def trim_after_apostrophe(value):
-        if isinstance(value, str) and "'" in value:
-            left = value.split("'", 1)[0]
-            return f"{left}'"
+    # 10. В столбцах Широта/Долгота удаляем символы справа от апострофа и все буквы,
+    # затем конвертируем координаты из DDD/DM в DD.
+    def normalize_coord_value(value):
+        if not isinstance(value, str):
+            return value
+
+        cleaned = value
+        if "'" in cleaned:
+            left = cleaned.split("'", 1)[0]
+            cleaned = f"{left}'"
+
+        # Удаляем любые буквенные символы (латиница и кириллица)
+        cleaned = re.sub(r"[A-Za-zА-Яа-яЁё]", "", cleaned)
+        cleaned = cleaned.replace(",", ".")
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned.strip()
+
+    def convert_coord_to_dd(value):
+        if pd.isna(value):
+            return value
+        if isinstance(value, (int, float)):
+            return float(value)
+        if not isinstance(value, str):
+            return value
+
+        coord = value.strip().replace("º", "°")
+        if not coord:
+            return pd.NA
+
+        # Формат DM: 43°12' или 43 12
+        dm_match = re.match(r"^([+-]?\d+(?:\.\d+)?)(?:\s*°\s*|\s+)(\d+(?:\.\d+)?)\s*'?$", coord)
+        if dm_match:
+            degrees = float(dm_match.group(1))
+            minutes = float(dm_match.group(2))
+            sign = -1 if degrees < 0 else 1
+            decimal_degrees = sign * (abs(degrees) + minutes / 60)
+            return round(decimal_degrees, 6)
+
+        # Формат DD: 43.2 или 43.2°
+        dd_match = re.match(r"^([+-]?\d+(?:\.\d+)?)\s*°?\s*'?$", coord)
+        if dd_match:
+            return round(float(dd_match.group(1)), 6)
+
+        return value
+
+    def format_coord_with_dot(value):
+        """Возвращает координату как текст с десятичной точкой для стабильного вывода в Excel."""
+        if pd.isna(value):
+            return pd.NA
+        if isinstance(value, (int, float)):
+            return f"{value:.6f}".rstrip("0").rstrip(".")
+        if isinstance(value, str):
+            return value.replace(",", ".")
         return value
 
     for coord_col in ("Широта", "Долгота"):
         if coord_col in df.columns:
-            df[coord_col] = df[coord_col].map(trim_after_apostrophe)
+            df[coord_col] = (
+                df[coord_col]
+                .map(normalize_coord_value)
+                .map(convert_coord_to_dd)
+                .map(format_coord_with_dot)
+            )
 
     return df
 
