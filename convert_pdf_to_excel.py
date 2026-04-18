@@ -175,6 +175,26 @@ def transform_dataframe(df):
                 .map(format_coord_with_dot)
             )
 
+    # 11. В столбце Лист приводим код к формату X-XX-XXX, удаляя все прочие символы.
+    def normalize_sheet_code(value):
+        if pd.isna(value):
+            return pd.NA
+
+        raw = str(value).strip()
+        if not raw:
+            return pd.NA
+
+        # Оставляем только буквы/цифры, остальные символы удаляем.
+        cleaned = re.sub(r"[^0-9A-Za-zА-Яа-яЁё]", "", raw)
+        if len(cleaned) < 6:
+            return pd.NA
+
+        token = cleaned[:6]
+        return f"{token[0]}-{token[1:3]}-{token[3:6]}"
+
+    if "Лист" in df.columns:
+        df["Лист"] = df["Лист"].map(normalize_sheet_code)
+
     return df
 
 def export_table_without_header(table, doc):
